@@ -155,11 +155,14 @@ jobs:
           else
             echo "Hide stuff patch not found, skipping..."
           fi
+          rm -rf ../SukiSU_patch
           df -h /
 
       - name: Apply VFS
         run: |
-          cd kernel_workspace/kernel_platform
+          cd kernel_workspace
+          git clone --depth=1 https://github.com/ShirkNeko/SukiSU_patch.git
+          cd kernel_platform
           if [ "${{ github.event.inputs.VFS }}" = "true" ] && [ -f ../SukiSU_patch/hooks/syscall_hooks.patch ]; then
             cp ../SukiSU_patch/hooks/syscall_hooks.patch ./
             echo "正在打vfs补丁"
@@ -168,11 +171,14 @@ jobs:
           else
             echo "VFS patch not applicable or not found, skipping..."
           fi
+          rm -rf ../SukiSU_patch
           df -h /
 
       - name: Apply LZ4KD
         run: |
-          cd kernel_workspace/kernel_platform
+          cd kernel_workspace
+          git clone --depth=1 https://github.com/ShirkNeko/SukiSU_patch.git
+          cd kernel_platform
           if [ "${{ github.event.inputs.ZRAM }}" = "true" ] && [ -f ../SukiSU_patch/other/zram/zram_patch/${{ github.event.inputs.KERNEL_VERSION }}/lz4kd.patch ]; then
             cp ../SukiSU_patch/other/zram/zram_patch/${{ github.event.inputs.KERNEL_VERSION }}/lz4kd.patch ./
             echo "正在打lz4kd补丁"
@@ -220,7 +226,7 @@ jobs:
             echo "CONFIG_ZRAM=y" >> "$CONFIG_FILE"
             echo "CONFIG_MODULE_SIG=n" >> "$CONFIG_FILE"
             echo "CONFIG_CRYPTO_LZO=y" >> "$CONFIG_FILE"
-            echo "CONFIG_ZRAM_DEF_COMP_LZ4KD=y" >> "$CONFIG_FILE"
+            echo "CONFIG_ZRAM_DEFONEPLUS_sm8250_defconfigCOMP_LZ4KD=y" >> "$CONFIG_FILE"
             echo "CONFIG_CRYPTO_LZ4HC=y" >> "$CONFIG_FILE"
             echo "CONFIG_CRYPTO_LZ4K=y" >> "$CONFIG_FILE"
             echo "CONFIG_CRYPTO_LZ4KD=y" >> "$CONFIG_FILE"
@@ -231,16 +237,19 @@ jobs:
 
       - name: Build kernel
         run: |
-          cd kernel_workspace/kernel_platform
+          cd kernel_workspace
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 ~/android/linux-x86
+          cd ~/android/linux-x86
+          git checkout clang-r353983 || git checkout clang-r377782 || echo "Failed to checkout specific Clang version, using default"
+          rm -rf .git docs test
+          cd ../../kernel_workspace
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 ~/android/aarch64-linux-android-4.9
+          rm -rf ~/android/aarch64-linux-android-4.9/.git
+          cd kernel_platform
           export CC=~/android/linux-x86/clang-r353983/bin/clang
           export LD=~/android/linux-x86/clang-r353983/bin/ld.lld
           export CLANG_TRIPLE=aarch64-linux-gnu-
           export CROSS_COMPILE=~/android/aarch64-linux-android-4.9/bin/aarch64-linux-android-
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 ~/android/linux-x86
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 ~/android/aarch64-linux-android-4.9
-          cd ~/android/linux-x86
-          git checkout clang-r353983 || git checkout clang-r377782 || git checkout main
-          cd ../../kernel_workspace/kernel_platform
           make O=out ARCH=arm64 ${{ github.event.inputs.FEIL }}
           make O=out -j$(nproc --all) ARCH=arm64 CC=$CC CLANG_TRIPLE=$CLANG_TRIPLE CROSS_COMPILE=$CROSS_COMPILE LD=$LD
           rm -rf out/*.[os] out/*.a out/*/.[os] out/*/*.a
