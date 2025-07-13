@@ -138,42 +138,54 @@ jobs:
       - name: Apply Patches SukiSU Ultra
         run: |
           cd kernel_workspace
-          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b susfs-main
+          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b main || git clone https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19
           git clone https://github.com/ShirkNeko/SukiSU_patch.git
           cd kernel_platform
           echo "正在给内核打susfs补丁"
-          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_non-gki.patch ./common/
-          cp -r ../susfs4ksu/kernel_patches/fs/* ./common/fs/
-          cp -r ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
-          cd common
-          patch -p1 < 50_add_susfs_in_non-gki.patch || true
-          echo "完成"
+          if [ -f ../susfs4ksu/kernel_patches/50_add_susfs_in_non-gki.patch ]; then
+            cp ../susfs4ksu/kernel_patches/50_add_susfs_in_non-gki.patch ./common/
+            cp -r ../susfs4ksu/kernel_patches/fs/* ./common/fs/ || true
+            cp -r ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/ || true
+            cd common
+            patch -p1 < 50_add_susfs_in_non-gki.patch || true
+            echo "完成"
+          else
+            echo "SUSFS patch not found, skipping..."
+          fi
 
       - name: Apply Hide Stuff Patches
         run: |
           cd kernel_workspace/kernel_platform/common
-          cp ../../SukiSU_patch/69_hide_stuff.patch ./
-          echo "正在打隐藏应用补丁"
-          patch -p1 -F 3 < 69_hide_stuff.patch || true
+          if [ -f ../../SukiSU_patch/69_hide_stuff.patch ]; then
+            cp ../../SukiSU_patch/69_hide_stuff.patch ./
+            echo "正在打隐藏应用补丁"
+            patch -p1 -F 3 < 69_hide_stuff.patch || true
+          else
+            echo "Hide stuff patch not found, skipping..."
+          fi
 
       - name: Apply VFS
         run: |
           cd kernel_workspace/kernel_platform/common
-          if [ "${{ github.event.inputs.VFS }}" = "true" ]; then
+          if [ "${{ github.event.inputs.VFS }}" = "true" ] && [ -f ../../SukiSU_patch/hooks/syscall_hooks.patch ]; then
             cp ../../SukiSU_patch/hooks/syscall_hooks.patch ./
             echo "正在打vfs补丁"
             patch -p1 -F 3 < syscall_hooks.patch || true
             echo "vfs_patch完成"
+          else
+            echo "VFS patch not applicable or not found, skipping..."
           fi
 
       - name: Apply LZ4KD
         run: |
           cd kernel_workspace/kernel_platform/common
-          if [ "${{ github.event.inputs.ZRAM }}" = "true" ]; then
+          if [ "${{ github.event.inputs.ZRAM }}" = "true" ] && [ -f ../../SukiSU_patch/other/zram/zram_patch/${{ github.event.inputs.KERNEL_VERSION }}/lz4kd.patch ]; then
             cp ../../SukiSU_patch/other/zram/zram_patch/${{ github.event.inputs.KERNEL_VERSION }}/lz4kd.patch ./
             echo "正在打lz4kd补丁"
             patch -p1 -F 3 < lz4kd.patch || true
             echo "完成LZ4KD补丁"
+          else
+            echo "LZ4KD patch not applicable or not found, skipping..."
           fi
 
       - name: Add Configuration Settings
