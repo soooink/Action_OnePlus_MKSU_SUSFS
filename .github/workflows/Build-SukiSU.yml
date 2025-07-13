@@ -131,8 +131,7 @@ jobs:
             sed -i 's/ -dirty//g' scripts/setlocalversion || true
             sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' scripts/setlocalversion || true
             echo "Modified scripts/setlocalversion to remove -dirty suffix"
-            git add scripts/setlocalversion
-            git commit -m "Remove -dirty suffix from kernel version" || echo "No changes to commit"
+            cat scripts/setlocalversion
           else
             echo "scripts/setlocalversion not found, skipping..."
           fi
