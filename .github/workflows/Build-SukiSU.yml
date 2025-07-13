@@ -160,7 +160,7 @@ jobs:
           if [ "${{ github.event.inputs.CPU }}" = "sm8250" ]; then
             git clone -b oneplus/sm8250_u_14.0.0_op9r https://github.com/OnePlusOSS/android_kernel_oneplus_sm8250 kernel_platform
             cd kernel_platform
-            curl -o arch/arm64/configs/oneplus_sm8250_defconfig https://raw.githubusercontent.com/<your-username>/<your-repo>/main/config
+            curl -o arch/arm64/configs/oneplus_sm8250_defconfig https://raw.githubusercontent.com/soooink/Action_OnePlus_MKSU_SUSFS/main/config
           else
             repo init -u https://github.com/OnePlusOSS/kernel_manifest.git -b refs/heads/oneplus/${{ github.event.inputs.CPU }} -m ${{ github.event.inputs.FEIL }}.xml --depth=1
             repo sync
