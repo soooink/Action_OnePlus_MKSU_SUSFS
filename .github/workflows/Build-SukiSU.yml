@@ -73,13 +73,21 @@ jobs:
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
         with:
-          root-reserve-mb: 8192
-          temp-reserve-mb: 2048
-          swap-size-mb: 8192
+          root-reserve-mb: 12288
+          temp-reserve-mb: 4096
+          swap-size-mb: 12288
           remove-dotnet: 'true'
           remove-android: 'true'
           remove-haskell: 'true'
           remove-codeql: 'true'
+
+      - name: Check disk space
+        run: |
+          df -h /
+          if [ $(df --output=avail / | tail -n 1) -lt 5000000 ]; then
+            echo "Error: Less than 5GB free disk space available."
+            exit 1
+          fi
 
       - name: Configure Git
         run: |
@@ -109,9 +117,12 @@ jobs:
       - name: Initialize repo and sync
         run: |
           mkdir kernel_workspace && cd kernel_workspace
-          git clone -b oneplus/sm8250_u_14.0.0_op9r https://github.com/OnePlusOSS/android_kernel_oneplus_sm8250 kernel_platform
+          git clone --depth=1 -b oneplus/sm8250_u_14.0.0_op9r https://github.com/OnePlusOSS/android_kernel_oneplus_sm8250 kernel_platform
           cd kernel_platform
           curl -o arch/arm64/configs/oneplus_sm8250_defconfig https://raw.githubusercontent.com/soooink/Action_OnePlus_MKSU_SUSFS/main/config
+          cd ..
+          rm -rf kernel_platform/.git
+          df -h /
 
       - name: Force remove -dirty suffix
         run: |
@@ -125,6 +136,7 @@ jobs:
           else
             echo "scripts/setlocalversion not found, skipping..."
           fi
+          df -h /
 
       - name: Add SukiSU Ultra
         run: |
@@ -134,12 +146,15 @@ jobs:
           KSU_VERSION=13014
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
           sed -i "s/DKSU_VERSION=12800/DKSU_VERSION=$KSU_VERSION/" kernel/Makefile
+          cd ..
+          rm -rf KernelSU/.git
+          df -h /
 
       - name: Apply Patches SukiSU Ultra
         run: |
           cd kernel_workspace
-          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b main || git clone https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19
-          git clone https://github.com/ShirkNeko/SukiSU_patch.git
+          git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b main
+          git clone --depth=1 https://github.com/ShirkNeko/SukiSU_patch.git
           cd kernel_platform
           echo "正在给内核打susfs补丁"
           if [ -f ../susfs4ksu/kernel_patches/50_add_susfs_in_non-gki.patch ]; then
@@ -151,6 +166,8 @@ jobs:
           else
             echo "SUSFS patch not found, skipping..."
           fi
+          rm -rf ../susfs4ksu
+          df -h /
 
       - name: Apply Hide Stuff Patches
         run: |
@@ -162,6 +179,7 @@ jobs:
           else
             echo "Hide stuff patch not found, skipping..."
           fi
+          df -h /
 
       - name: Apply VFS
         run: |
@@ -174,6 +192,8 @@ jobs:
           else
             echo "VFS patch not applicable or not found, skipping..."
           fi
+          rm -rf ../SukiSU_patch
+          df -h /
 
       - name: Apply LZ4KD
         run: |
@@ -186,6 +206,7 @@ jobs:
           else
             echo "LZ4KD patch not applicable or not found, skipping..."
           fi
+          df -h /
 
       - name: Add Configuration Settings
         run: |
@@ -230,6 +251,7 @@ jobs:
             echo "CONFIG_CRYPTO_842=y" >> "$CONFIG_FILE"
             echo "CONFIG_ZRAM_WRITEBACK=y" >> "$CONFIG_FILE"
           fi
+          df -h /
 
       - name: Build kernel
         run: |
@@ -245,11 +267,13 @@ jobs:
           cd ../../kernel_workspace/kernel_platform
           make O=out ARCH=arm64 ${{ github.event.inputs.FEIL }}
           make O=out -j$(nproc --all) ARCH=arm64 CC=$CC CLANG_TRIPLE=$CLANG_TRIPLE CROSS_COMPILE=$CROSS_COMPILE LD=$LD
+          rm -rf out/*.[os] out/*.a out/*/.[os] out/*/*.a
+          df -h /
 
       - name: Make AnyKernel3
         run: |
           cd kernel_workspace
-          git clone https://github.com/osm0sis/AnyKernel3 --depth=1
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3
           rm -rf AnyKernel3/.git
           cp kernel_platform/out/arch/arm64/boot/Image.gz AnyKernel3/
           if [ "${{ github.event.inputs.KPM }}" = "true" ]; then
@@ -260,6 +284,7 @@ jobs:
             mv oImage.gz Image.gz
             cp Image.gz $GITHUB_WORKSPACE/AnyKernel3/
           fi
+          df -h /
 
       - name: Download Latest SUSFS Module
         run: |
@@ -279,6 +304,7 @@ jobs:
           else
             wget -P AnyKernel3 https://github.com/sidex15/ksu_module_susfs/releases/latest/download/ksu_module_susfs_1.5.2+.zip
           fi
+          df -h /
 
       - name: Set suffix
         id: suffix
