@@ -76,11 +76,17 @@ jobs:
           remove-haskell: 'true'
           remove-codeql: 'true'
 
+      - name: Clean unnecessary packages
+        run: |
+          sudo apt-get remove -y --purge '^dotnet-.*' '^llvm-.*' 'libmono.*' '^ghc-.*' '^mysql-.*' '^postgresql-.*' '^temurin-.*' 'libclang.*' 'google-.*' 'microsoft-.*' 'mono-.*'
+          sudo apt-get autoremove -y
+          df -h /
+
       - name: Check disk space
         run: |
           df -h /
-          if [ $(df --output=avail / | tail -n 1) -lt 5000000 ]; then
-            echo "Error: Less than 5GB free disk space available."
+          if [ $(df --output=avail / | tail -n 1) -lt 6000000 ]; then
+            echo "Error: Less than 6GB free disk space available."
             exit 1
           fi
 
@@ -94,7 +100,14 @@ jobs:
           sudo apt update && sudo apt upgrade -y
           sudo apt install -y python3 git curl flex bison build-essential zip zlib1g-dev \
             libc6-dev-i386 libncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev \
-            libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig bc cpio jq
+            libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig bc cpio jq ccache
+          df -h /
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: kernel-${{ github.event.inputs.CPU }}-${{ github.event.inputs.KERNEL_VERSION }}
+          max-size: 2G
 
       - name: Show selected inputs debug
         run: |
@@ -107,6 +120,7 @@ jobs:
           echo "Selected ZRAM: ${{ github.event.inputs.ZRAM }}"
           echo "Selected VFS: ${{ github.event.inputs.VFS }}"
           echo "Selected KPM: ${{ github.event.inputs.KPM }}"
+          df -h /
 
       - name: Initialize repo and sync
         run: |
@@ -143,11 +157,15 @@ jobs:
           rm -rf KernelSU/.git
           df -h /
 
-      - name: Apply Hide Stuff Patches
+      - name: Clone SukiSU patches
         run: |
           cd kernel_workspace
           git clone --depth=1 https://github.com/ShirkNeko/SukiSU_patch.git
-          cd kernel_platform
+          df -h /
+
+      - name: Apply Hide Stuff Patches
+        run: |
+          cd kernel_workspace/kernel_platform
           if [ -f ../SukiSU_patch/69_hide_stuff.patch ]; then
             cp ../SukiSU_patch/69_hide_stuff.patch ./
             echo "正在打隐藏应用补丁"
@@ -155,14 +173,11 @@ jobs:
           else
             echo "Hide stuff patch not found, skipping..."
           fi
-          rm -rf ../SukiSU_patch
           df -h /
 
       - name: Apply VFS
         run: |
-          cd kernel_workspace
-          git clone --depth=1 https://github.com/ShirkNeko/SukiSU_patch.git
-          cd kernel_platform
+          cd kernel_workspace/kernel_platform
           if [ "${{ github.event.inputs.VFS }}" = "true" ] && [ -f ../SukiSU_patch/hooks/syscall_hooks.patch ]; then
             cp ../SukiSU_patch/hooks/syscall_hooks.patch ./
             echo "正在打vfs补丁"
@@ -171,14 +186,11 @@ jobs:
           else
             echo "VFS patch not applicable or not found, skipping..."
           fi
-          rm -rf ../SukiSU_patch
           df -h /
 
       - name: Apply LZ4KD
         run: |
-          cd kernel_workspace
-          git clone --depth=1 https://github.com/ShirkNeko/SukiSU_patch.git
-          cd kernel_platform
+          cd kernel_workspace/kernel_platform
           if [ "${{ github.event.inputs.ZRAM }}" = "true" ] && [ -f ../SukiSU_patch/other/zram/zram_patch/${{ github.event.inputs.KERNEL_VERSION }}/lz4kd.patch ]; then
             cp ../SukiSU_patch/other/zram/zram_patch/${{ github.event.inputs.KERNEL_VERSION }}/lz4kd.patch ./
             echo "正在打lz4kd补丁"
@@ -226,7 +238,7 @@ jobs:
             echo "CONFIG_ZRAM=y" >> "$CONFIG_FILE"
             echo "CONFIG_MODULE_SIG=n" >> "$CONFIG_FILE"
             echo "CONFIG_CRYPTO_LZO=y" >> "$CONFIG_FILE"
-            echo "CONFIG_ZRAM_DEFONEPLUS_sm8250_defconfigCOMP_LZ4KD=y" >> "$CONFIG_FILE"
+            echo "CONFIG_ZRAM_DEF_COMP_LZ4KD=y" >> "$CONFIG_FILE"
             echo "CONFIG_CRYPTO_LZ4HC=y" >> "$CONFIG_FILE"
             echo "CONFIG_CRYPTO_LZ4K=y" >> "$CONFIG_FILE"
             echo "CONFIG_CRYPTO_LZ4KD=y" >> "$CONFIG_FILE"
@@ -240,18 +252,21 @@ jobs:
           cd kernel_workspace
           git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 ~/android/linux-x86
           cd ~/android/linux-x86
-          git checkout clang-r353983 || git checkout clang-r377782 || echo "Failed to checkout specific Clang version, using default"
+          git checkout clang-r450784d || git checkout clang-r383902 || git checkout clang-r377782 || echo "Failed to checkout specific Clang version, using default"
           rm -rf .git docs test
           cd ../../kernel_workspace
           git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 ~/android/aarch64-linux-android-4.9
           rm -rf ~/android/aarch64-linux-android-4.9/.git
           cd kernel_platform
-          export CC=~/android/linux-x86/clang-r353983/bin/clang
-          export LD=~/android/linux-x86/clang-r353983/bin/ld.lld
+          export CC=~/android/linux-x86/clang-r450784d/bin/clang
+          export LD=~/android/linux-x86/clang-r450784d/bin/ld.lld
           export CLANG_TRIPLE=aarch64-linux-gnu-
           export CROSS_COMPILE=~/android/aarch64-linux-android-4.9/bin/aarch64-linux-android-
-          make O=out ARCH=arm64 ${{ github.event.inputs.FEIL }}
-          make O=out -j$(nproc --all) ARCH=arm64 CC=$CC CLANG_TRIPLE=$CLANG_TRIPLE CROSS_COMPILE=$CROSS_COMPILE LD=$LD
+          export CCACHE_DIR=/github/home/.ccache
+          export CCACHE_EXEC=/usr/bin/ccache
+          ccache -M 2G
+          make O=out ARCH=arm64 CC="ccache $CC" CLANG_TRIPLE=$CLANG_TRIPLE CROSS_COMPILE=$CROSS_COMPILE LD=$LD ${{ github.event.inputs.FEIL }}
+          make O=out -j$(nproc --all) ARCH=arm64 CC="ccache $CC" CLANG_TRIPLE=$CLANG_TRIPLE CROSS_COMPILE=$CROSS_COMPILE LD=$LD
           rm -rf out/*.[os] out/*.a out/*/.[os] out/*/*.a
           df -h /
 
