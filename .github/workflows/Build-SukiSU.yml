@@ -48,7 +48,7 @@ on:
         type: boolean
         description: "是否启用手动钩子？"
         required: true
-        default: true
+        default: false
       KPM:
         type: boolean
         description: "是否启用KPM？"
@@ -76,10 +76,11 @@ jobs:
           remove-haskell: 'true'
           remove-codeql: 'true'
 
-      - name: Clean unnecessary packages
+      - name: Clean unnecessary packages and temp files
         run: |
           sudo apt-get remove -y --purge '^dotnet-.*' '^llvm-.*' 'libmono.*' '^ghc-.*' '^mysql-.*' '^postgresql-.*' '^temurin-.*' 'libclang.*' 'google-.*' 'microsoft-.*' 'mono-.*'
           sudo apt-get autoremove -y
+          sudo rm -rf /home/runner/* /github/home/.ccache /tmp/*
           df -h /
 
       - name: Check disk space
@@ -107,7 +108,7 @@ jobs:
         uses: hendrikmuhs/ccache-action@v1
         with:
           key: kernel-${{ github.event.inputs.CPU }}-${{ github.event.inputs.KERNEL_VERSION }}
-          max-size: 2G
+          max-size: 500M
 
       - name: Show selected inputs debug
         run: |
@@ -130,6 +131,7 @@ jobs:
           curl -o arch/arm64/configs/oneplus_sm8250_defconfig https://raw.githubusercontent.com/soooink/Action_OnePlus_MKSU_SUSFS/main/config
           cd ..
           rm -rf kernel_platform/.git
+          sudo rm -rf /home/runner/.cache /tmp/*
           df -h /
 
       - name: Force remove -dirty suffix
@@ -155,12 +157,14 @@ jobs:
           sed -i "s/DKSU_VERSION=12800/DKSU_VERSION=$KSU_VERSION/" kernel/Makefile
           cd ..
           rm -rf KernelSU/.git
+          sudo rm -rf /home/runner/.cache /tmp/*
           df -h /
 
       - name: Clone SukiSU patches
         run: |
           cd kernel_workspace
           git clone --depth=1 https://github.com/ShirkNeko/SukiSU_patch.git
+          sudo rm -rf /home/runner/.cache /tmp/*
           df -h /
 
       - name: Apply Hide Stuff Patches
@@ -173,33 +177,8 @@ jobs:
           else
             echo "Hide stuff patch not found, skipping..."
           fi
-          df -h /
-
-      - name: Apply VFS
-        run: |
-          cd kernel_workspace/kernel_platform
-          if [ "${{ github.event.inputs.VFS }}" = "true" ] && [ -f ../SukiSU_patch/hooks/syscall_hooks.patch ]; then
-            cp ../SukiSU_patch/hooks/syscall_hooks.patch ./
-            echo "正在打vfs补丁"
-            patch -p1 -F 3 < syscall_hooks.patch || true
-            echo "vfs_patch完成"
-          else
-            echo "VFS patch not applicable or not found, skipping..."
-          fi
-          df -h /
-
-      - name: Apply LZ4KD
-        run: |
-          cd kernel_workspace/kernel_platform
-          if [ "${{ github.event.inputs.ZRAM }}" = "true" ] && [ -f ../SukiSU_patch/other/zram/zram_patch/${{ github.event.inputs.KERNEL_VERSION }}/lz4kd.patch ]; then
-            cp ../SukiSU_patch/other/zram/zram_patch/${{ github.event.inputs.KERNEL_VERSION }}/lz4kd.patch ./
-            echo "正在打lz4kd补丁"
-            patch -p1 -F 3 < lz4kd.patch || true
-            echo "完成LZ4KD补丁"
-          else
-            echo "LZ4KD patch not applicable or not found, skipping..."
-          fi
           rm -rf ../SukiSU_patch
+          sudo rm -rf /home/runner/.cache /tmp/*
           df -h /
 
       - name: Add Configuration Settings
@@ -252,11 +231,13 @@ jobs:
           cd kernel_workspace
           git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 ~/android/linux-x86
           cd ~/android/linux-x86
-          git checkout clang-r450784d || git checkout clang-r383902 || git checkout clang-r377782 || echo "Failed to checkout specific Clang version, using default"
-          rm -rf .git docs test
+          git checkout clang-r450784d || git checkout clang-r383902 || echo "Failed to checkout specific Clang version, using default"
+          rm -rf .git docs test include lib/*clang* lib/*llvm*
           cd ../../kernel_workspace
           git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 ~/android/aarch64-linux-android-4.9
-          rm -rf ~/android/aarch64-linux-android-4.9/.git
+          rm -rf ~/android/aarch64-linux-android-4.9/.git ~/android/aarch64-linux-android-4.9/share ~/android/aarch64-linux-android-4.9/libexec
+          sudo rm -rf /home/runner/.cache /tmp/* /github/home/.ccache/*
+          df -h /
           cd kernel_platform
           export CC=~/android/linux-x86/clang-r450784d/bin/clang
           export LD=~/android/linux-x86/clang-r450784d/bin/ld.lld
@@ -264,10 +245,11 @@ jobs:
           export CROSS_COMPILE=~/android/aarch64-linux-android-4.9/bin/aarch64-linux-android-
           export CCACHE_DIR=/github/home/.ccache
           export CCACHE_EXEC=/usr/bin/ccache
-          ccache -M 2G
+          ccache -M 500M
           make O=out ARCH=arm64 CC="ccache $CC" CLANG_TRIPLE=$CLANG_TRIPLE CROSS_COMPILE=$CROSS_COMPILE LD=$LD ${{ github.event.inputs.FEIL }}
           make O=out -j$(nproc --all) ARCH=arm64 CC="ccache $CC" CLANG_TRIPLE=$CLANG_TRIPLE CROSS_COMPILE=$CROSS_COMPILE LD=$LD
           rm -rf out/*.[os] out/*.a out/*/.[os] out/*/*.a
+          sudo rm -rf /home/runner/.cache /tmp/* /github/home/.ccache/*
           df -h /
 
       - name: Make AnyKernel3
@@ -284,6 +266,7 @@ jobs:
             mv oImage.gz Image.gz
             cp Image.gz $GITHUB_WORKSPACE/AnyKernel3/
           fi
+          sudo rm -rf /home/runner/.cache /tmp/* /github/home/.ccache/*
           df -h /
 
       - name: Set suffix
