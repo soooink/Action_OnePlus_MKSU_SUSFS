@@ -1,289 +1,100 @@
-name: Build OnePlus_SukiSU Ultra All
+name: 编译 OnePlus SM8250 内核 (ShockWAVE)
+
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
-    inputs:
-      CPU:
-        type: choice
-        description: "分支"
-        required: true
-        default: sm8250
-        options:
-          - sm8250
-      FEIL:
-        type: choice
-        description: "配置文件"
-        required: true
-        default: oneplus_sm8250_defconfig
-        options:
-          - oneplus_sm8250_defconfig
-      CPUD:
-        type: choice
-        description: "处理器代号"
-        required: true
-        default: kona
-        options:
-          - kona
-      ANDROID_VERSION:
-        type: choice
-        description: "内核安卓版本"
-        required: true
-        default: android14
-        options:
-          - android14
-      KERNEL_VERSION:
-        type: choice
-        description: "内核版本"
-        required: true
-        default: "4.19"
-        options:
-          - "4.19"
-      BUILD_METHOD:
-        type: choice
-        description: "编译方式"
-        required: true
-        default: perf
-        options:
-          - perf
-      VFS:
-        type: boolean
-        description: "是否启用手动钩子？"
-        required: true
-        default: false
-      KPM:
-        type: boolean
-        description: "是否启用KPM？"
-        required: true
-        default: true
-      ZRAM:
-        type: boolean
-        description: "是否启用添加更多的ZRAM算法？"
-        required: true
-        default: false
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
-
+    runs-on: ubuntu-latest
     steps:
-      - name: Maximize build space
-        uses: easimon/maximize-build-space@master
+      - name: 检出 NonGKI_Kernel_Built_Action
+        uses: actions/checkout@v4
         with:
-          root-reserve-mb: 12288
-          temp-reserve-mb: 4096
-          swap-size-mb: 12288
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
+          repository: soooink/NonGKI_Kernel_Built_Action
+          ref: Stable-ShockWAVE-Kernel
+          path: action
 
-      - name: Clean unnecessary packages and temp files
+      - name: 检出 OnePlus 内核源码
         run: |
-          sudo apt-get remove -y --purge '^dotnet-.*' '^llvm-.*' 'libmono.*' '^ghc-.*' '^mysql-.*' '^postgresql-.*' '^temurin-.*' 'libclang.*' 'google-.*' 'microsoft-.*' 'mono-.*'
-          sudo apt-get autoremove -y
-          sudo rm -rf /home/runner/* /github/home/.ccache /tmp/*
-          df -h /
+          mkdir -p $GITHUB_WORKSPACE/kernel_workspace
+          cd $GITHUB_WORKSPACE/kernel_workspace
+          git clone --recursive -b oneplus/sm8250_u_14.0.0_op9r --depth=1 https://github.com/OnePlusOSS/android_kernel_oneplus_sm8250 kernel_platform
 
-      - name: Check disk space
+      - name: 设置 LOCALVERSION
         run: |
-          df -h /
-          if [ $(df --output=avail / | tail -n 1) -lt 6000000 ]; then
-            echo "Error: Less than 6GB free disk space available."
-            exit 1
-          fi
+          echo "LOCALVERSION=" >> $GITHUB_ENV
+        working-directory: $GITHUB_WORKSPACE/kernel_workspace/kernel_platform
 
-      - name: Configure Git
+      - name: 设置编译环境
         run: |
-          git config --global user.name "Numbersf"
-          git config --global user.email "263623064@qq.com"
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev libncurses5-dev python3-dev python3-pyelftools libfdt-dev gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf
 
-      - name: Install dependencies
+      - name: 下载 Neutron Clang
         run: |
-          sudo apt update && sudo apt upgrade -y
-          sudo apt install -y python3 git curl flex bison build-essential zip zlib1g-dev \
-            libc6-dev-i386 libncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev \
-            libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig bc cpio jq ccache
-          df -h /
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master-kernel-build-2022/clang-r450784e.tar.gz
+          mkdir -p clang
+          tar -xzf clang-r450784e.tar.gz -C clang
+        working-directory: $GITHUB_WORKSPACE/kernel_workspace/kernel_platform
 
-      - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@v1
-        with:
-          key: kernel-${{ github.event.inputs.CPU }}-${{ github.event.inputs.KERNEL_VERSION }}
-          max-size: 500M
-
-      - name: Show selected inputs debug
+      - name: 下载 Linaro GCC (arm64)
         run: |
-          echo "Selected CPU: ${{ github.event.inputs.CPU }}"
-          echo "Selected FEIL: ${{ github.event.inputs.FEIL }}"
-          echo "Selected CPUD: ${{ github.event.inputs.CPUD }}"
-          echo "Selected ANDROID_VERSION: ${{ github.event.inputs.ANDROID_VERSION }}"
-          echo "Selected KERNEL_VERSION: ${{ github.event.inputs.KERNEL_VERSION }}"
-          echo "Selected BUILD_METHOD: ${{ github.event.inputs.BUILD_METHOD }}"
-          echo "Selected ZRAM: ${{ github.event.inputs.ZRAM }}"
-          echo "Selected VFS: ${{ github.event.inputs.VFS }}"
-          echo "Selected KPM: ${{ github.event.inputs.KPM }}"
-          df -h /
+          wget -q https://snapshots.linaro.org/gnu-toolchain/14.0-2023.06-1/aarch64-linux-gnu/gcc-linaro-14.0.0-2023.06-x86_64_aarch64-linux-gnu.tar.xz
+          mkdir -p gcc64
+          tar -xJf gcc-linaro-14.0.0-2023.06-x86_64_aarch64-linux-gnu.tar.xz -C gcc64
+        working-directory: $GITHUB_WORKSPACE/kernel_workspace/kernel_platform
 
-      - name: Initialize repo and sync
+      - name: 下载 Linaro GCC (arm32)
         run: |
-          mkdir kernel_workspace && cd kernel_workspace
-          git clone --depth=1 -b oneplus/sm8250_u_14.0.0_op9r https://github.com/OnePlusOSS/android_kernel_oneplus_sm8250 kernel_platform
+          wget -q https://snapshots.linaro.org/gnu-toolchain/14.0-2023.06-1/arm-linux-gnueabihf/gcc-linaro-14.0.0-2023.06-x86_64_arm-linux-gnueabihf.tar.xz
+          mkdir -p gcc32
+          tar -xJf gcc-linaro-14.0.0-2023.06-x86_64_arm-linux-gnueabihf.tar.xz -C gcc32
+        working-directory: $GITHUB_WORKSPACE/kernel_workspace/kernel_platform
+
+      - name: 检出 AnyKernel3
+        run: |
+          git clone --depth=1 -b ShockWAVE https://github.com/MrShockWAVEE/AnyKernel3.git anykernel3
+        working-directory: $GITHUB_WORKSPACE/kernel_workspace
+
+      - name: 加载 config-suki.env 配置
+        run: |
+          cp action/config-suki.env kernel_platform/.env
+          export $(cat kernel_platform/.env | xargs)
+        working-directory: $GITHUB_WORKSPACE/kernel_workspace
+
+      - name: 编译内核
+        run: |
           cd kernel_platform
-          curl -o arch/arm64/configs/oneplus_sm8250_defconfig https://raw.githubusercontent.com/soooink/Action_OnePlus_MKSU_SUSFS/main/config
-          cd ..
-          rm -rf kernel_platform/.git
-          sudo rm -rf /home/runner/.cache /tmp/*
-          df -h /
+          ./action/build.sh
+        working-directory: $GITHUB_WORKSPACE/kernel_workspace
+        env:
+          DEVICE: lemonadep  # OnePlus 9R 的代号
+          ARCH: arm64
+          SUBARCH: arm64
+          DEFCONFIG: oneplus9r_defconfig
+          CLANG_PATH: $GITHUB_WORKSPACE/kernel_workspace/kernel_platform/clang/bin
+          CROSS_COMPILE: $GITHUB_WORKSPACE/kernel_workspace/kernel_platform/gcc64/bin/aarch64-linux-gnu-
+          CROSS_COMPILE_ARM32: $GITHUB_WORKSPACE/kernel_workspace/kernel_platform/gcc32/bin/arm-linux-gnueabihf-
+          KERNEL_IMAGE_NAME: Image.gz-dtb
+          ENABLE_KERNELSU: true
+          KERNELSU_TAG: susfs-main
+          USE_NEUTRON_CLANG: true
+          USE_CUSTOM_GCC_64: true
+          USE_CUSTOM_GCC_32: true
+          USE_CUSTOM_ANYKERNEL3: true
+          EXTRA_CMDS: LLVM=1 LLVM_IAS=1 LD=ld.lld AS=llvm-as AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf STRIP=llvm-strip CONFIG_NO_ERROR_ON_MISMATCH=y TARGET_BUILD_VARIANT=user
 
-      - name: Force remove -dirty suffix
-        run: |
-          cd kernel_workspace/kernel_platform
-          if [ -f scripts/setlocalversion ]; then
-            sed -i 's/ -dirty//g' scripts/setlocalversion || true
-            sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' scripts/setlocalversion || true
-            echo "Modified scripts/setlocalversion to remove -dirty suffix"
-            cat scripts/setlocalversion
-          else
-            echo "scripts/setlocalversion not found, skipping..."
-          fi
-          df -h /
-
-      - name: Add SukiSU Ultra
-        run: |
-          cd kernel_workspace/kernel_platform
-          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-main
-          cd KernelSU
-          KSU_VERSION=13014
-          echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
-          sed -i "s/DKSU_VERSION=12800/DKSU_VERSION=$KSU_VERSION/" kernel/Makefile
-          cd ..
-          rm -rf KernelSU/.git
-          sudo rm -rf /home/runner/.cache /tmp/*
-          df -h /
-
-      - name: Clone SukiSU patches
-        run: |
-          cd kernel_workspace
-          git clone --depth=1 https://github.com/ShirkNeko/SukiSU_patch.git
-          sudo rm -rf /home/runner/.cache /tmp/*
-          df -h /
-
-      - name: Apply Hide Stuff Patches
-        run: |
-          cd kernel_workspace/kernel_platform
-          if [ -f ../SukiSU_patch/69_hide_stuff.patch ]; then
-            cp ../SukiSU_patch/69_hide_stuff.patch ./
-            echo "正在打隐藏应用补丁"
-            patch -p1 -F 3 < 69_hide_stuff.patch || true
-          else
-            echo "Hide stuff patch not found, skipping..."
-          fi
-          rm -rf ../SukiSU_patch
-          sudo rm -rf /home/runner/.cache /tmp/*
-          df -h /
-
-      - name: Add Configuration Settings
-        run: |
-          cd kernel_workspace/kernel_platform
-          CONFIG_FILE=arch/arm64/configs/${{ github.event.inputs.FEIL }}
-          echo "CONFIG_KSU=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KPM=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KALLSYMS=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KALLSYMS_ALL=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> "$CONFIG_FILE"
-          if [ "${{ github.event.inputs.VFS }}" = "true" ]; then
-            echo "CONFIG_KSU_WITH_KPROBES=n" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_SUS_SU=n" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_MANUAL_HOOK=y" >> "$CONFIG_FILE"
-          else
-            echo "CONFIG_KPROBES=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_SUS_SU=y" >> "$CONFIG_FILE"
-          fi
-          if [ "${{ github.event.inputs.ZRAM }}" = "true" ]; then
-            echo "CONFIG_ZSMALLOC=y" >> "$CONFIG_FILE"
-            echo "CONFIG_ZRAM=y" >> "$CONFIG_FILE"
-            echo "CONFIG_MODULE_SIG=n" >> "$CONFIG_FILE"
-            echo "CONFIG_CRYPTO_LZO=y" >> "$CONFIG_FILE"
-            echo "CONFIG_ZRAM_DEF_COMP_LZ4KD=y" >> "$CONFIG_FILE"
-            echo "CONFIG_CRYPTO_LZ4HC=y" >> "$CONFIG_FILE"
-            echo "CONFIG_CRYPTO_LZ4K=y" >> "$CONFIG_FILE"
-            echo "CONFIG_CRYPTO_LZ4KD=y" >> "$CONFIG_FILE"
-            echo "CONFIG_CRYPTO_842=y" >> "$CONFIG_FILE"
-            echo "CONFIG_ZRAM_WRITEBACK=y" >> "$CONFIG_FILE"
-          fi
-          df -h /
-
-      - name: Build kernel
-        run: |
-          cd kernel_workspace
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 ~/android/linux-x86
-          cd ~/android/linux-x86
-          git checkout clang-r450784d || git checkout clang-r383902 || echo "Failed to checkout specific Clang version, using default"
-          rm -rf .git docs test include lib/*clang* lib/*llvm*
-          cd ../../kernel_workspace
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 ~/android/aarch64-linux-android-4.9
-          rm -rf ~/android/aarch64-linux-android-4.9/.git ~/android/aarch64-linux-android-4.9/share ~/android/aarch64-linux-android-4.9/libexec
-          sudo rm -rf /home/runner/.cache /tmp/* /github/home/.ccache/*
-          df -h /
-          cd kernel_platform
-          export CC=~/android/linux-x86/clang-r450784d/bin/clang
-          export LD=~/android/linux-x86/clang-r450784d/bin/ld.lld
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-          export CROSS_COMPILE=~/android/aarch64-linux-android-4.9/bin/aarch64-linux-android-
-          export CCACHE_DIR=/github/home/.ccache
-          export CCACHE_EXEC=/usr/bin/ccache
-          ccache -M 500M
-          make O=out ARCH=arm64 CC="ccache $CC" CLANG_TRIPLE=$CLANG_TRIPLE CROSS_COMPILE=$CROSS_COMPILE LD=$LD ${{ github.event.inputs.FEIL }}
-          make O=out -j$(nproc --all) ARCH=arm64 CC="ccache $CC" CLANG_TRIPLE=$CLANG_TRIPLE CROSS_COMPILE=$CROSS_COMPILE LD=$LD
-          rm -rf out/*.[os] out/*.a out/*/.[os] out/*/*.a
-          sudo rm -rf /home/runner/.cache /tmp/* /github/home/.ccache/*
-          df -h /
-
-      - name: Make AnyKernel3
-        run: |
-          cd kernel_workspace
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3
-          rm -rf AnyKernel3/.git
-          cp kernel_platform/out/arch/arm64/boot/Image.gz AnyKernel3/
-          if [ "${{ github.event.inputs.KPM }}" = "true" ]; then
-            cd kernel_platform/out/arch/arm64/boot
-            curl -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU_patch/main/kpm/patch_linux" -o patch_linux
-            chmod +x patch_linux
-            ./patch_linux
-            mv oImage.gz Image.gz
-            cp Image.gz $GITHUB_WORKSPACE/AnyKernel3/
-          fi
-          sudo rm -rf /home/runner/.cache /tmp/* /github/home/.ccache/*
-          df -h /
-
-      - name: Set suffix
-        id: suffix
-        run: |
-          echo "value=${{ github.event.inputs.KPM == 'true' && '_KPM' || '' }}${{ github.event.inputs.VFS == 'true' && '_VFS' || '' }}${{ github.event.inputs.ZRAM == 'true' && '_LZ4KD' || '' }}" >> $GITHUB_OUTPUT
-
-      - name: Remove _uv suffix from FEIL
-        id: feil_clean
-        run: |
-          clean_feil="${{ github.event.inputs.FEIL }}"
-          clean_feil="${clean_feil%_v}"
-          clean_feil="${clean_feil%_u}"
-          echo "value=$clean_feil" >> $GITHUB_OUTPUT
-
-      - name: Upload AnyKernel3
+      - name: 上传内核镜像
         uses: actions/upload-artifact@v4
         with:
-          name: AnyKernel3_SukiSUUltra_${{ env.KSUVER }}_${{ steps.feil_clean.outputs.value }}${{ steps.suffix.outputs.value }}
-          path: ./AnyKernel3/*
+          name: kernel-image
+          path: $GITHUB_WORKSPACE/kernel_workspace/kernel_platform/arch/arm64/boot/Image.gz-dtb
+
+      - name: 上传 AnyKernel3 ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-zip
+          path: $GITHUB_WORKSPACE/kernel_workspace/anykernel3/*.zip
