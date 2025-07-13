@@ -17,20 +17,25 @@ jobs:
           ref: Stable-ShockWAVE-Kernel
           path: action
 
-      - name: 创建工作目录并检出 OnePlus 内核源码
+      - name: 验证分支并检出 OnePlus 内核源码
         run: |
           echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
           mkdir -p $GITHUB_WORKSPACE/kernel_workspace
           cd $GITHUB_WORKSPACE/kernel_workspace
+          echo "Checking available branches..."
+          git ls-remote https://github.com/OnePlusOSS/android_kernel_oneplus_sm8250 | grep oneplus/sm8250_u_14.0.0_op9r || echo "Warning: Branch oneplus/sm8250_u_14.0.0_op9r not found"
           echo "Cloning kernel source..."
           git clone --recursive -b oneplus/sm8250_u_14.0.0_op9r --depth=1 https://github.com/OnePlusOSS/android_kernel_oneplus_sm8250 kernel_platform || { echo "Error: Failed to clone kernel source"; exit 1; }
           if [ -d "kernel_platform" ]; then
             echo "Kernel source cloned successfully"
             ls -la kernel_platform
+            echo "Checking defconfig files..."
+            ls -la kernel_platform/arch/arm64/configs/ || echo "Warning: Defconfig directory not found"
           else
             echo "Error: kernel_platform directory not found"
             exit 1
           fi
+        working-directory: $GITHUB_WORKSPACE/kernel_workspace
 
       - name: 设置 LOCALVERSION
         run: |
@@ -44,7 +49,7 @@ jobs:
 
       - name: 下载 Neutron Clang
         run: |
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master-kernel-build-2022/clang-r450784e.tar.gz
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master-kernel-build-2022/clang-r450784e.tar.gz || { echo "Error: Failed to download Neutron Clang"; exit 1; }
           mkdir -p clang
           tar -xzf clang-r450784e.tar.gz -C clang
           ls -la clang
@@ -52,7 +57,7 @@ jobs:
 
       - name: 下载 Linaro GCC (arm64)
         run: |
-          wget -q https://snapshots.linaro.org/gnu-toolchain/14.0-2023.06-1/aarch64-linux-gnu/gcc-linaro-14.0.0-2023.06-x86_64_aarch64-linux-gnu.tar.xz
+          wget -q https://snapshots.linaro.org/gnu-toolchain/14.0-2023.06-1/aarch64-linux-gnu/gcc-linaro-14.0.0-2023.06-x86_64_aarch64-linux-gnu.tar.xz || { echo "Error: Failed to download Linaro GCC (arm64)"; exit 1; }
           mkdir -p gcc64
           tar -xJf gcc-linaro-14.0.0-2023.06-x86_64_aarch64-linux-gnu.tar.xz -C gcc64
           ls -la gcc64
@@ -60,7 +65,7 @@ jobs:
 
       - name: 下载 Linaro GCC (arm32)
         run: |
-          wget -q https://snapshots.linaro.org/gnu-toolchain/14.0-2023.06-1/arm-linux-gnueabihf/gcc-linaro-14.0.0-2023.06-x86_64_arm-linux-gnueabihf.tar.xz
+          wget -q https://snapshots.linaro.org/gnu-toolchain/14.0-2023.06-1/arm-linux-gnueabihf/gcc-linaro-14.0.0-2023.06-x86_64_arm-linux-gnueabihf.tar.xz || { echo "Error: Failed to download Linaro GCC (arm32)"; exit 1; }
           mkdir -p gcc32
           tar -xJf gcc-linaro-14.0.0-2023.06-x86_64_arm-linux-gnueabihf.tar.xz -C gcc32
           ls -la gcc32
@@ -68,7 +73,7 @@ jobs:
 
       - name: 检出 AnyKernel3
         run: |
-          git clone --depth=1 -b ShockWAVE https://github.com/MrShockWAVEE/AnyKernel3.git anykernel3
+          git clone --depth=1 -b ShockWAVE https://github.com/MrShockWAVEE/AnyKernel3.git anykernel3 || { echo "Error: Failed to clone AnyKernel3"; exit 1; }
           ls -la anykernel3
         working-directory: $GITHUB_WORKSPACE/kernel_workspace
 
@@ -76,7 +81,7 @@ jobs:
         run: |
           cp action/config-suki.env kernel_platform/.env
           export $(cat kernel_platform/.env | xargs)
-          env | grep -E "ARCH|SUBARCH|DEFCONFIG|CLANG_PATH|CROSS_COMPILE"
+          env | grep -E "ARCH|SUBARCH|DEFCONFIG|CLANG_PATH|CROSS_COMPILE|KERNELSU" || echo "No matching environment variables found"
         working-directory: $GITHUB_WORKSPACE/kernel_workspace
 
       - name: 编译内核
