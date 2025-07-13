@@ -17,11 +17,12 @@ jobs:
           ref: Stable-ShockWAVE-Kernel
           path: action
 
-      - name: 检出 OnePlus 内核源码
+      - name: 创建工作目录并检出 OnePlus 内核源码
         run: |
           mkdir -p $GITHUB_WORKSPACE/kernel_workspace
           cd $GITHUB_WORKSPACE/kernel_workspace
-          git clone --recursive -b oneplus/sm8250_u_14.0.0_op9r --depth=1 https://github.com/OnePlusOSS/android_kernel_oneplus_sm8250 kernel_platform
+          git clone --recursive -b oneplus/sm8250_u_14.0.0_op9r --depth=1 https://github.com/OnePlusOSS/android_kernel_oneplus_sm8250 kernel_platform || { echo "Git clone failed"; exit 1; }
+          ls -la kernel_platform  # 调试：检查目录内容
 
       - name: 设置 LOCALVERSION
         run: |
@@ -71,7 +72,7 @@ jobs:
           ./action/build.sh
         working-directory: $GITHUB_WORKSPACE/kernel_workspace
         env:
-          DEVICE: lemonadep  # OnePlus 9R 的代号
+          DEVICE: lemonadep
           ARCH: arm64
           SUBARCH: arm64
           DEFCONFIG: oneplus9r_defconfig
