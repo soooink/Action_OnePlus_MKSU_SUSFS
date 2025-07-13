@@ -138,19 +138,8 @@ jobs:
       - name: Apply Patches SukiSU Ultra
         run: |
           cd kernel_workspace
-          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b main || git clone https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19
-          git clone https://github.com/ShirkNeko/SukiSU_patch.git
-          cd kernel_platform
-          echo "正在给内核打susfs补丁"
-          if [ -f ../susfs4ksu/kernel_patches/50_add_susfs_in_non-gki.patch ]; then
-            cp ../susfs4ksu/kernel_patches/50_add_susfs_in_non-gki.patch ./common/
-            cp -r ../susfs4ksu/kernel_patches/fs/* ./common/fs/ || true
-            cp -r ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/ || true
-            cd common
-            patch -p1 < 50_add_susfs_in_non-gki.patch || true
-            echo "完成"
-          else
-            echo "SUSFS patch not found, skipping..."
+          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-main
+          echo "SUSFS patch not found, skipping..."
           fi
 
       - name: Apply Hide Stuff Patches
