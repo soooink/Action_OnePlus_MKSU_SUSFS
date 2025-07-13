@@ -126,27 +126,37 @@ jobs:
             echo "scripts/setlocalversion not found, skipping..."
           fi
 
-      - name: Add KernelSU
+      - name: Add SukiSU Ultra
         run: |
           cd kernel_workspace/kernel_platform
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh" | bash -s v0.9.5
+          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s nongki
           cd KernelSU
-          KSU_VERSION=11872
+          KSU_VERSION=13014
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
           sed -i "s/DKSU_VERSION=12800/DKSU_VERSION=$KSU_VERSION/" kernel/Makefile
 
       - name: Apply Patches SukiSU Ultra
         run: |
           cd kernel_workspace
-          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-main
-          echo "SUSFS patch not found, skipping..."
+          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b main || git clone https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19
+          git clone https://github.com/ShirkNeko/SukiSU_patch.git
+          cd kernel_platform
+          echo "正在给内核打susfs补丁"
+          if [ -f ../susfs4ksu/kernel_patches/50_add_susfs_in_non-gki.patch ]; then
+            cp ../susfs4ksu/kernel_patches/50_add_susfs_in_non-gki.patch ./
+            cp -r ../susfs4ksu/kernel_patches/fs/* ./fs/ || true
+            cp -r ../susfs4ksu/kernel_patches/include/linux/* ./include/linux/ || true
+            patch -p1 < 50_add_susfs_in_non-gki.patch || true
+            echo "完成"
+          else
+            echo "SUSFS patch not found, skipping..."
           fi
 
       - name: Apply Hide Stuff Patches
         run: |
-          cd kernel_workspace/kernel_platform/common
-          if [ -f ../../SukiSU_patch/69_hide_stuff.patch ]; then
-            cp ../../SukiSU_patch/69_hide_stuff.patch ./
+          cd kernel_workspace/kernel_platform
+          if [ -f ../SukiSU_patch/69_hide_stuff.patch ]; then
+            cp ../SukiSU_patch/69_hide_stuff.patch ./
             echo "正在打隐藏应用补丁"
             patch -p1 -F 3 < 69_hide_stuff.patch || true
           else
@@ -155,9 +165,9 @@ jobs:
 
       - name: Apply VFS
         run: |
-          cd kernel_workspace/kernel_platform/common
-          if [ "${{ github.event.inputs.VFS }}" = "true" ] && [ -f ../../SukiSU_patch/hooks/syscall_hooks.patch ]; then
-            cp ../../SukiSU_patch/hooks/syscall_hooks.patch ./
+          cd kernel_workspace/kernel_platform
+          if [ "${{ github.event.inputs.VFS }}" = "true" ] && [ -f ../SukiSU_patch/hooks/syscall_hooks.patch ]; then
+            cp ../SukiSU_patch/hooks/syscall_hooks.patch ./
             echo "正在打vfs补丁"
             patch -p1 -F 3 < syscall_hooks.patch || true
             echo "vfs_patch完成"
@@ -167,9 +177,9 @@ jobs:
 
       - name: Apply LZ4KD
         run: |
-          cd kernel_workspace/kernel_platform/common
-          if [ "${{ github.event.inputs.ZRAM }}" = "true" ] && [ -f ../../SukiSU_patch/other/zram/zram_patch/${{ github.event.inputs.KERNEL_VERSION }}/lz4kd.patch ]; then
-            cp ../../SukiSU_patch/other/zram/zram_patch/${{ github.event.inputs.KERNEL_VERSION }}/lz4kd.patch ./
+          cd kernel_workspace/kernel_platform
+          if [ "${{ github.event.inputs.ZRAM }}" = "true" ] && [ -f ../SukiSU_patch/other/zram/zram_patch/${{ github.event.inputs.KERNEL_VERSION }}/lz4kd.patch ]; then
+            cp ../SukiSU_patch/other/zram/zram_patch/${{ github.event.inputs.KERNEL_VERSION }}/lz4kd.patch ./
             echo "正在打lz4kd补丁"
             patch -p1 -F 3 < lz4kd.patch || true
             echo "完成LZ4KD补丁"
@@ -183,6 +193,8 @@ jobs:
           CONFIG_FILE=arch/arm64/configs/${{ github.event.inputs.FEIL }}
           echo "CONFIG_KSU=y" >> "$CONFIG_FILE"
           echo "CONFIG_KPM=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KALLSYMS=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KALLSYMS_ALL=y" >> "$CONFIG_FILE"
           if [ "${{ github.event.inputs.VFS }}" = "true" ]; then
             echo "CONFIG_KSU_WITH_KPROBES=n" >> "$CONFIG_FILE"
             echo "CONFIG_KSU_SUSFS_SUS_SU=n" >> "$CONFIG_FILE"
