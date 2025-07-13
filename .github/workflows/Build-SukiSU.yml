@@ -44,11 +44,6 @@ on:
         default: perf
         options:
           - perf
-      SUSFS_CI:
-        type: boolean
-        description: "下载SUSFS模块是否使用CI构建？"
-        required: true
-        default: true
       VFS:
         type: boolean
         description: "是否启用手动钩子？"
@@ -109,7 +104,6 @@ jobs:
           echo "Selected ANDROID_VERSION: ${{ github.event.inputs.ANDROID_VERSION }}"
           echo "Selected KERNEL_VERSION: ${{ github.event.inputs.KERNEL_VERSION }}"
           echo "Selected BUILD_METHOD: ${{ github.event.inputs.BUILD_METHOD }}"
-          echo "Selected SUSFS_CI: ${{ github.event.inputs.SUSFS_CI }}"
           echo "Selected ZRAM: ${{ github.event.inputs.ZRAM }}"
           echo "Selected VFS: ${{ github.event.inputs.VFS }}"
           echo "Selected KPM: ${{ github.event.inputs.KPM }}"
@@ -140,7 +134,7 @@ jobs:
       - name: Add SukiSU Ultra
         run: |
           cd kernel_workspace/kernel_platform
-          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s nongki
+          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-main
           cd KernelSU
           KSU_VERSION=13014
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
@@ -149,28 +143,11 @@ jobs:
           rm -rf KernelSU/.git
           df -h /
 
-      - name: Apply Patches SukiSU Ultra
-        run: |
-          cd kernel_workspace
-          git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b main
-          git clone --depth=1 https://github.com/ShirkNeko/SukiSU_patch.git
-          cd kernel_platform
-          echo "正在给内核打susfs补丁"
-          if [ -f ../susfs4ksu/kernel_patches/50_add_susfs_in_non-gki.patch ]; then
-            cp ../susfs4ksu/kernel_patches/50_add_susfs_in_non-gki.patch ./
-            cp -r ../susfs4ksu/kernel_patches/fs/* ./fs/ || true
-            cp -r ../susfs4ksu/kernel_patches/include/linux/* ./include/linux/ || true
-            patch -p1 < 50_add_susfs_in_non-gki.patch || true
-            echo "完成"
-          else
-            echo "SUSFS patch not found, skipping..."
-          fi
-          rm -rf ../susfs4ksu
-          df -h /
-
       - name: Apply Hide Stuff Patches
         run: |
-          cd kernel_workspace/kernel_platform
+          cd kernel_workspace
+          git clone --depth=1 https://github.com/ShirkNeko/SukiSU_patch.git
+          cd kernel_platform
           if [ -f ../SukiSU_patch/69_hide_stuff.patch ]; then
             cp ../SukiSU_patch/69_hide_stuff.patch ./
             echo "正在打隐藏应用补丁"
@@ -191,7 +168,6 @@ jobs:
           else
             echo "VFS patch not applicable or not found, skipping..."
           fi
-          rm -rf ../SukiSU_patch
           df -h /
 
       - name: Apply LZ4KD
@@ -205,6 +181,7 @@ jobs:
           else
             echo "LZ4KD patch not applicable or not found, skipping..."
           fi
+          rm -rf ../SukiSU_patch
           df -h /
 
       - name: Add Configuration Settings
@@ -215,25 +192,25 @@ jobs:
           echo "CONFIG_KPM=y" >> "$CONFIG_FILE"
           echo "CONFIG_KALLSYMS=y" >> "$CONFIG_FILE"
           echo "CONFIG_KALLSYMS_ALL=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> "$CONFIG_FILE"
           if [ "${{ github.event.inputs.VFS }}" = "true" ]; then
             echo "CONFIG_KSU_WITH_KPROBES=n" >> "$CONFIG_FILE"
             echo "CONFIG_KSU_SUSFS_SUS_SU=n" >> "$CONFIG_FILE"
             echo "CONFIG_KSU_MANUAL_HOOK=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> "$CONFIG_FILE"
           else
             echo "CONFIG_KPROBES=y" >> "$CONFIG_FILE"
             echo "CONFIG_KSU_SUSFS_SUS_SU=y" >> "$CONFIG_FILE"
@@ -282,26 +259,6 @@ jobs:
             ./patch_linux
             mv oImage.gz Image.gz
             cp Image.gz $GITHUB_WORKSPACE/AnyKernel3/
-          fi
-          df -h /
-
-      - name: Download Latest SUSFS Module
-        run: |
-          cd kernel_workspace
-          if [ "${{ github.event.inputs.SUSFS_CI }}" = "true" ]; then
-            LATEST_RUN_ID=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              "https://api.github.com/repos/sidex15/susfs4ksu-module/actions/runs?status=success" | \
-              jq -r '.workflow_runs[] | select(.head_branch == "v1.5.2+") | .id' | head -n 1)
-            if [ -z "$LATEST_RUN_ID" ]; then
-              echo "No successful run found for branch v1.5.2+"
-              exit 1
-            fi
-            ARTIFACT_URL=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              "https://api.github.com/repos/sidex15/susfs4ksu-module/actions/runs/$LATEST_RUN_ID/artifacts" | \
-              jq -r '.artifacts[0].archive_download_url')
-            curl -L -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -o AnyKernel3/ksu_module_susfs.zip "$ARTIFACT_URL"
-          else
-            wget -P AnyKernel3 https://github.com/sidex15/ksu_module_susfs/releases/latest/download/ksu_module_susfs_1.5.2+.zip
           fi
           df -h /
 
