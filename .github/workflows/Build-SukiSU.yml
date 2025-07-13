@@ -19,10 +19,18 @@ jobs:
 
       - name: 创建工作目录并检出 OnePlus 内核源码
         run: |
+          echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
           mkdir -p $GITHUB_WORKSPACE/kernel_workspace
           cd $GITHUB_WORKSPACE/kernel_workspace
-          git clone --recursive -b oneplus/sm8250_u_14.0.0_op9r --depth=1 https://github.com/OnePlusOSS/android_kernel_oneplus_sm8250 kernel_platform || { echo "Git clone failed"; exit 1; }
-          ls -la kernel_platform  # 调试：检查目录内容
+          echo "Cloning kernel source..."
+          git clone --recursive -b oneplus/sm8250_u_14.0.0_op9r --depth=1 https://github.com/OnePlusOSS/android_kernel_oneplus_sm8250 kernel_platform || { echo "Error: Failed to clone kernel source"; exit 1; }
+          if [ -d "kernel_platform" ]; then
+            echo "Kernel source cloned successfully"
+            ls -la kernel_platform
+          else
+            echo "Error: kernel_platform directory not found"
+            exit 1
+          fi
 
       - name: 设置 LOCALVERSION
         run: |
@@ -39,6 +47,7 @@ jobs:
           wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master-kernel-build-2022/clang-r450784e.tar.gz
           mkdir -p clang
           tar -xzf clang-r450784e.tar.gz -C clang
+          ls -la clang
         working-directory: $GITHUB_WORKSPACE/kernel_workspace/kernel_platform
 
       - name: 下载 Linaro GCC (arm64)
@@ -46,6 +55,7 @@ jobs:
           wget -q https://snapshots.linaro.org/gnu-toolchain/14.0-2023.06-1/aarch64-linux-gnu/gcc-linaro-14.0.0-2023.06-x86_64_aarch64-linux-gnu.tar.xz
           mkdir -p gcc64
           tar -xJf gcc-linaro-14.0.0-2023.06-x86_64_aarch64-linux-gnu.tar.xz -C gcc64
+          ls -la gcc64
         working-directory: $GITHUB_WORKSPACE/kernel_workspace/kernel_platform
 
       - name: 下载 Linaro GCC (arm32)
@@ -53,17 +63,20 @@ jobs:
           wget -q https://snapshots.linaro.org/gnu-toolchain/14.0-2023.06-1/arm-linux-gnueabihf/gcc-linaro-14.0.0-2023.06-x86_64_arm-linux-gnueabihf.tar.xz
           mkdir -p gcc32
           tar -xJf gcc-linaro-14.0.0-2023.06-x86_64_arm-linux-gnueabihf.tar.xz -C gcc32
+          ls -la gcc32
         working-directory: $GITHUB_WORKSPACE/kernel_workspace/kernel_platform
 
       - name: 检出 AnyKernel3
         run: |
           git clone --depth=1 -b ShockWAVE https://github.com/MrShockWAVEE/AnyKernel3.git anykernel3
+          ls -la anykernel3
         working-directory: $GITHUB_WORKSPACE/kernel_workspace
 
       - name: 加载 config-suki.env 配置
         run: |
           cp action/config-suki.env kernel_platform/.env
           export $(cat kernel_platform/.env | xargs)
+          env | grep -E "ARCH|SUBARCH|DEFCONFIG|CLANG_PATH|CROSS_COMPILE"
         working-directory: $GITHUB_WORKSPACE/kernel_workspace
 
       - name: 编译内核
@@ -93,9 +106,11 @@ jobs:
         with:
           name: kernel-image
           path: $GITHUB_WORKSPACE/kernel_workspace/kernel_platform/arch/arm64/boot/Image.gz-dtb
+          if-no-files-found: error
 
       - name: 上传 AnyKernel3 ZIP
         uses: actions/upload-artifact@v4
         with:
           name: kernel-zip
           path: $GITHUB_WORKSPACE/kernel_workspace/anykernel3/*.zip
+          if-no-files-found: error
